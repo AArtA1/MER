@@ -3,3 +3,5 @@
 *.txt
 *.xlsx
 __pycache__/
+*.pdf
+MER.code-workspace
