@@ -303,7 +303,6 @@ class iMiGUEDatasetHandler(BaseDatasetHandler):
         self.split_file = os.path.join(self.csv_folder, f"imigue_{split}.csv")     
  
  
- 
 if __name__ == "__main__": 
     
     # smg_dataset = SMGDatasetHandler('C:/Users/aslan/Documents/MER/SMG', 'train') 
