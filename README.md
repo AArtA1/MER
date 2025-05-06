@@ -31,9 +31,11 @@ pip install torch==2.4.0 torchvision torchaudio --index-url https://download.pyt
 
 ### 1.3 Install project dependencies
 
+```bash
 pip install -r requirements.txt
 
 source bash.sh
+```
 
 
 ## 2. Datasets
@@ -44,6 +46,7 @@ Below is the SMG example; adjust paths for other datasets.
 ### 2.1 Expected folder layout (SMG)
 
 SMG/
+
 ├── video_features/        # video
 
 
@@ -79,7 +82,7 @@ pip install tensorboard
 tensorboard --logdir logs
 ```
 
-Open http://localhost:6006 in your browser to inspect losses, metrics and embeddings.
+Open http://localhost:6006 in your browser to inspect losses and metrics.
 
 
 ## 4. Training Configuration
