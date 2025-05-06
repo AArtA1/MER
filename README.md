@@ -14,6 +14,7 @@ conda create -y -n emotionbind python=3.10
 conda activate emotionbind
 ```
 
+
 ### 1.2 Install PyTorch 2.4 + CUDA
 
 Pick the wheel matching your GPU / CUDA toolkit (examples below):
@@ -35,8 +36,6 @@ pip install -r requirements.txt
 source bash.sh
 
 
-⸻
-
 ## 2. Datasets
 
 Supported datasets: SMG, IMIGUE
@@ -46,10 +45,10 @@ Below is the SMG example; adjust paths for other datasets.
 
 SMG/
 ├── video_features/        # video
+
+
 └── skeleton_features/       # audio
 
-
-⸻
 
 ### 3. Training
 
@@ -70,7 +69,7 @@ python train.py \
 
 Checkpoints and TensorBoard logs are saved to ./logs by default.
 
-## 3.2 Monitoring with TensorBoard
+### 3.2 Monitoring with TensorBoard
 
 ```bash
 # install if missing
@@ -82,9 +81,8 @@ tensorboard --logdir logs
 
 Open http://localhost:6006 in your browser to inspect losses, metrics and embeddings.
 
-⸻
 
-4. Training Configuration
+## 4. Training Configuration
 
 Flag	Default	Description
 --batch_size	8	Batch size
@@ -97,7 +95,7 @@ Run python train.py --help for the complete list.
 
 ⸻
 
-5. Requirements (concise)
+## 5. Requirements (concise)
 	•	Python ≥ 3.8 (tested on 3.10)
 	•	PyTorch 2.4.0
 	•	tqdm, argparse, pickle
