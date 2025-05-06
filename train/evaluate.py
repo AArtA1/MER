@@ -16,9 +16,8 @@ CHECKPOINT_DIR = "./checkpoints"
 
 DATASET_MODALITIES = {
     "iemocap": ["video", "audio", "text"],
-    "amigos": ["video", "faces", "eeg", "ecg"],
-    "kemocon": ["video", "audio", "text", "eeg", "ecg"],
-    "mahnob": ["video", "eeg"],
+    "smg" : ["video", "skeleton"],
+    "imigue" : ["video", "skeleton"]
 }
 
 def PCC(a: torch.tensor, b: torch.tensor):
@@ -47,6 +46,45 @@ def concordance_correlation_coefficient(y_true, y_pred):
 def pearson_correlation_coefficient(y_true, y_pred):
     return np.array([np.corrcoef(y_true[:, i], y_pred[:, i])[0, 1] for i in range(y_true.shape[1])])
 
+def evaluate(model, test_loader, writer):
+    model.eval()
+    ground_truth, predictions = [], []
+    categorical_ground_truth, categorical_predictions = [], []
+
+    vad_dict = load_vad_dict('../utils/sorted_vad_labels.pkl')
+
+    with torch.no_grad():
+        for batch in tqdm(test_loader, desc="Testing Model"):
+            modalities = DATASET_MODALITIES.get(args.dataset_name, [])
+            inputs = {}
+            for key in ("video", "skeleton"):
+                if key in batch:
+                    tgt = "vision" if key == "video" else key
+                    tgt = "pose" if tgt == "skeleton" else tgt
+                    inputs[tgt] = batch[key].to(DEVICE)
+
+            vad_labels = batch["label"].to(DEVICE)
+            categorical_labels = batch["categorical_label"]
+
+            _, vad_predictions = model(inputs)
+
+            predictions.append(vad_predictions.cpu())
+            ground_truth.append(vad_labels.cpu())
+    
+    ground_truth_tensor = torch.cat(ground_truth, dim=0).to(dtype=torch.float32, device=DEVICE)
+    predictions_tensor = torch.cat(predictions, dim=0).to(dtype=torch.float32, device=DEVICE)
+
+    mse = torch.nn.functional.mse_loss(predictions_tensor, ground_truth_tensor).item()
+    mae = torch.nn.functional.l1_loss(predictions_tensor, ground_truth_tensor).item()
+    ccc = concordance_correlation_coefficient(ground_truth_tensor, ground_truth_tensor)
+    ss_total = ((ground_truth_tensor - ground_truth_tensor.mean()) ** 2).sum()
+    ss_residual = ((ground_truth_tensor - predictions_tensor) ** 2).sum()
+    r2 = (1 - ss_residual / ss_total).item()    
+
+    writer.add_scalar("CCC", , epoch)
+    writer.add_scalar("MAE", mae, epoch)
+    writer.add_scalar("MSE", mse, epoch)
+
 
 def evaluate_model(test_loader, checkpoint_path, checkpoint_name):
     model = EmotionBindModel(dataset_name=args.dataset_name)
@@ -73,18 +111,11 @@ def evaluate_model(test_loader, checkpoint_path, checkpoint_name):
         for batch in tqdm(test_loader, desc="Testing Model"):
             modalities = DATASET_MODALITIES.get(args.dataset_name, [])
             inputs = {}
-            if "video" in batch:
-                inputs["vision"] = batch["video"].to(DEVICE)
-            if "audio" in batch:
-                inputs["audio"] = batch["audio"].to(DEVICE)
-            if "text" in batch:
-                inputs["text"] = batch["text"].to(DEVICE)
-            if "faces" in batch:
-                inputs["faces"] = batch["faces"].to(DEVICE)
-            if "eeg" in batch:
-                inputs["eeg"] = batch["eeg"].to(DEVICE)
-            if "ecg" in batch:
-                inputs["ecg"] = batch["ecg"].to(DEVICE)
+            for key in ("video", "skeleton"):
+                if key in batch:
+                    tgt = "vision" if key == "video" else key
+                    tgt = "pose" if tgt == "skeleton" else tgt
+                    inputs[tgt] = batch[key].to(DEVICE)
 
             vad_labels = batch["label"].to(DEVICE)
             categorical_labels = batch["categorical_label"]
@@ -147,24 +178,25 @@ def evaluate_model(test_loader, checkpoint_path, checkpoint_name):
     #f1 = f1_score(categorical_ground_truth, categorical_predictions, average="weighted")
     #print(f"F1-score: {f1:.6f}")
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--root_dataset_dir", type=str, default="D:/AMIGOS", help="Path to dataset directory")
-    parser.add_argument("--text_feature_dir", type=str, default="D:/IEMOCAP/text_features",
+    parser.add_argument("--root_dataset_dir", type=str, default="D:/SMG", help="Path to training dataset directory")
+    parser.add_argument("--text_feature_dir", type=str, default="D:/SMG/text_features",
                         help="Path to text feature directory")
-    parser.add_argument("--video_feature_dir", type=str, default="D:/AMIGOS/rgb_features",
+    parser.add_argument("--video_feature_dir", type=str, default="D:/SMG/mvit_v2_scene_features",
                         help="Path to video feature directory")
-    parser.add_argument("--audio_feature_dir", type=str, default="D:/IEMOCAP/wav2vec2_audio_features",
+    parser.add_argument("--audio_feature_dir", type=str, default="D:/SMG/wav2vec2_audio_features",
                         help="Path to audio feature directory")
-    parser.add_argument("--faces_feature_dir", type=str, default="D:/AMIGOS/face_features",
+    parser.add_argument("--faces_feature_dir", type=str, default="D:/SMG/face_features",
                         help="Path to faces video feature directory")
-    parser.add_argument("--eeg_feature_dir", type=str, default="D:/AMIGOS/eeg_features",
-                        help="Path to eeg video feature directory")
-    parser.add_argument("--ecg_feature_dir", type=str, default="D:/AMIGOS/ecg_features",
+    parser.add_argument("--skeleton_feature_dir", type=str, default="D:/SMG/skeleton_features",
                         help="Path to ecg video feature directory")
-    parser.add_argument("--dataset_name", type=str, default="amigos",
-                        choices=['iemocap', 'amigos', 'kemocon', 'mahnob'], help="Name of the dataset")
+    parser.add_argument("--dataset_name", type=str, choices=['smg', 'imigue', 'iemocap'], help="Name of the dataset")
+    parser.add_argument("--num_processes", type=int, default=1, help="Number of parallel training processes")
     parser.add_argument("--batch_size", type=int, default=8, help="Batch size for training")
+    parser.add_argument("--learning_rate", type=float, default=1e-4, help="Learning rate for optimizer")
+    parser.add_argument("--epochs", type=int, default=10, help="Number of training epochs")
+    parser.add_argument("--multi_mode", type=bool, default=False, help="Whether to enable multi-dataset training")
     args = parser.parse_args()
 
     feature_dirs = {}
@@ -176,10 +208,8 @@ if __name__ == "__main__":
         feature_dirs["text"] = args.text_feature_dir
     if args.faces_feature_dir:
         feature_dirs["faces"] = args.faces_feature_dir
-    if args.eeg_feature_dir:
-        feature_dirs["eeg"] = args.eeg_feature_dir
-    if args.ecg_feature_dir:
-        feature_dirs["ecg"] = args.ecg_feature_dir
+    if args.skeleton_feature_dir:
+        feature_dirs["skeleton"] = args.skeleton_feature_dir
 
     if not os.path.exists(args.root_dataset_dir):
         raise FileNotFoundError(f"The dataset directory does not exist: {args.root_dataset_dir}")

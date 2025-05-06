@@ -23,15 +23,8 @@ from emotionbind.imagebind.models.transformer import MultiheadAttention, SimpleT
 
 ModalityType = SimpleNamespace(
     VISION="vision",
-    VISION1="vision1",
-    VISION2="vision2",
-    VISION3="vision3",
-    VISION4="vision4",
-    VISION5="vision5",
     TEXT="text",
     AUDIO="audio",
-    EEG="eeg",
-    ECG="ecg",
     POSE="pose",                   # Skeleton Pose Data
     FACES="faces"
 )
@@ -39,9 +32,9 @@ ModalityType = SimpleNamespace(
 # Datasets: MANHOB-HCI, AMIGOS, K-EMOCON, IMIGUE, SMG, IEMOCAP
 
 DATASET_WEIGHTS = {
-    "mahnob": torch.tensor([0.3, 0.1, 0.2, 0.1, 0.1, 0.1, 0.1]),
-    "amigos": torch.tensor([0.3, 0.3, 0.2, 0.2]),
     "iemocap": torch.tensor([0.4, 0.3, 0.3]),
+    "smg":torch.tensor([0.5, 0.5]),
+    "imigue":torch.tensor([0.5, 0.5])
 }
 
 
@@ -54,8 +47,6 @@ class EmotionBindModel(nn.Module):
         audio_kernel_size=16,
         audio_stride=10,
         out_embed_dim=768,
-        eeg_embed_dim=768,
-        ecg_embed_dim=768,
         pose_embed_dim=768,
         vision_embed_dim=768,
         text_embed_dim=768,
@@ -85,8 +76,6 @@ class EmotionBindModel(nn.Module):
             #vision_embed_dim,
             #text_embed_dim,
             #audio_embed_dim,
-            #eeg_embed_dim,
-            #ecg_embed_dim,
             #pose_embed_dim,
         )
 
@@ -96,8 +85,6 @@ class EmotionBindModel(nn.Module):
             vision_embed_dim,
             text_embed_dim,
             audio_embed_dim,
-            eeg_embed_dim,
-            ecg_embed_dim,
             #pose_embed_dim,
             faces_embed_dim,
         )
@@ -173,7 +160,6 @@ class EmotionBindModel(nn.Module):
             ModalityType.VISION: video_preprocessor,
             ModalityType.TEXT: text_preprocessor,
             ModalityType.AUDIO: audio_preprocessor,
-            #ModalityType.ECG: ecg_preprocessor,
             #ModalityType.POSE: pose_preprocessor,
         }
 
@@ -191,12 +177,6 @@ class EmotionBindModel(nn.Module):
         audio_num_blocks=12,
         audio_num_heads=12,
         audio_drop_path=0.0,
-        eeg_embed_dim=768,
-        eeg_num_blocks=12,
-        eeg_num_heads=12,
-        ecg_embed_dim=768,
-        ecg_num_blocks=12,
-        ecg_num_heads=12,
         faces_embed_dim=768,
         faces_num_blocks=24,
         faces_num_heads=16,
@@ -235,51 +215,6 @@ class EmotionBindModel(nn.Module):
             drop_path=0.0,
         )
 
-        modality_trunks[ModalityType.VISION1] = instantiate_trunk(
-            vision_embed_dim,
-            vision_num_blocks,
-            vision_num_heads,
-            pre_transformer_ln=True,
-            add_bias_kv=False,
-            drop_path=0.0,
-        )
-
-        modality_trunks[ModalityType.VISION2] = instantiate_trunk(
-            vision_embed_dim,
-            vision_num_blocks,
-            vision_num_heads,
-            pre_transformer_ln=True,
-            add_bias_kv=False,
-            drop_path=0.0,
-        )
-
-        modality_trunks[ModalityType.VISION3] = instantiate_trunk(
-            vision_embed_dim,
-            vision_num_blocks,
-            vision_num_heads,
-            pre_transformer_ln=True,
-            add_bias_kv=False,
-            drop_path=0.0,
-        )
-
-        modality_trunks[ModalityType.VISION4] = instantiate_trunk(
-            vision_embed_dim,
-            vision_num_blocks,
-            vision_num_heads,
-            pre_transformer_ln=True,
-            add_bias_kv=False,
-            drop_path=0.0,
-        )
-
-        modality_trunks[ModalityType.VISION5] = instantiate_trunk(
-            vision_embed_dim,
-            vision_num_blocks,
-            vision_num_heads,
-            pre_transformer_ln=True,
-            add_bias_kv=False,
-            drop_path=0.0,
-        )
-
         modality_trunks[ModalityType.TEXT] = instantiate_trunk(
             text_embed_dim,
             text_num_blocks,
@@ -295,24 +230,6 @@ class EmotionBindModel(nn.Module):
             pre_transformer_ln=False,
             add_bias_kv=True,
             drop_path=audio_drop_path,
-        )
-
-        modality_trunks[ModalityType.EEG] = instantiate_trunk(
-            eeg_embed_dim,
-            eeg_num_blocks,
-            eeg_num_heads,
-            pre_transformer_ln=False,
-            add_bias_kv=True,
-            drop_path=0.0,
-        )
-
-        modality_trunks[ModalityType.ECG] = instantiate_trunk(
-            ecg_embed_dim,
-            ecg_num_blocks,
-            ecg_num_heads,
-            pre_transformer_ln=False,
-            add_bias_kv=True,
-            drop_path=0.0,
         )
 
         modality_trunks[ModalityType.FACES] = instantiate_trunk(
@@ -333,43 +250,11 @@ class EmotionBindModel(nn.Module):
         vision_embed_dim,
         text_embed_dim,
         audio_embed_dim,
-        eeg_embed_dim,
-        ecg_embed_dim,
         faces_embed_dim,
     ):
         modality_heads = {}
 
         modality_heads[ModalityType.VISION] = nn.Sequential(
-            nn.LayerNorm(normalized_shape=vision_embed_dim, eps=1e-6),
-            SelectElement(index=0),
-            nn.Linear(vision_embed_dim, out_embed_dim, bias=False),
-        )
-
-        modality_heads[ModalityType.VISION1] = nn.Sequential(
-            nn.LayerNorm(normalized_shape=vision_embed_dim, eps=1e-6),
-            SelectElement(index=0),
-            nn.Linear(vision_embed_dim, out_embed_dim, bias=False),
-        )
-
-        modality_heads[ModalityType.VISION2] = nn.Sequential(
-            nn.LayerNorm(normalized_shape=vision_embed_dim, eps=1e-6),
-            SelectElement(index=0),
-            nn.Linear(vision_embed_dim, out_embed_dim, bias=False),
-        )
-
-        modality_heads[ModalityType.VISION3] = nn.Sequential(
-            nn.LayerNorm(normalized_shape=vision_embed_dim, eps=1e-6),
-            SelectElement(index=0),
-            nn.Linear(vision_embed_dim, out_embed_dim, bias=False),
-        )
-
-        modality_heads[ModalityType.VISION4] = nn.Sequential(
-            nn.LayerNorm(normalized_shape=vision_embed_dim, eps=1e-6),
-            SelectElement(index=0),
-            nn.Linear(vision_embed_dim, out_embed_dim, bias=False),
-        )
-
-        modality_heads[ModalityType.VISION5] = nn.Sequential(
             nn.LayerNorm(normalized_shape=vision_embed_dim, eps=1e-6),
             SelectElement(index=0),
             nn.Linear(vision_embed_dim, out_embed_dim, bias=False),
@@ -388,18 +273,6 @@ class EmotionBindModel(nn.Module):
             nn.Linear(audio_embed_dim, out_embed_dim, bias=False),
         )
 
-        modality_heads[ModalityType.EEG] = nn.Sequential(
-            nn.LayerNorm(normalized_shape=eeg_embed_dim, eps=1e-6),
-            SelectElement(index=0),
-            nn.Linear(eeg_embed_dim, out_embed_dim, bias=False),
-        )
-
-        modality_heads[ModalityType.ECG] = nn.Sequential(
-            nn.LayerNorm(normalized_shape=ecg_embed_dim, eps=1e-6),
-            SelectElement(index=0),
-            nn.Linear(ecg_embed_dim, out_embed_dim, bias=False),
-        )
-
         modality_heads[ModalityType.FACES] = nn.Sequential(
             nn.LayerNorm(normalized_shape=faces_embed_dim, eps=1e-6),
             SelectElement(index=0),
@@ -414,11 +287,6 @@ class EmotionBindModel(nn.Module):
         modality_postprocessors = {}
 
         modality_postprocessors[ModalityType.VISION] = Normalize(dim=-1)
-        modality_postprocessors[ModalityType.VISION1] = Normalize(dim=-1)
-        modality_postprocessors[ModalityType.VISION2] = Normalize(dim=-1)
-        modality_postprocessors[ModalityType.VISION3] = Normalize(dim=-1)
-        modality_postprocessors[ModalityType.VISION4] = Normalize(dim=-1)
-        modality_postprocessors[ModalityType.VISION5] = Normalize(dim=-1)
         modality_postprocessors[ModalityType.FACES] = Normalize(dim=-1)
         modality_postprocessors[ModalityType.TEXT] = nn.Sequential(
             Normalize(dim=-1), LearnableLogitScaling(learnable=True)
@@ -426,14 +294,6 @@ class EmotionBindModel(nn.Module):
         modality_postprocessors[ModalityType.AUDIO] = nn.Sequential(
             Normalize(dim=-1),
             LearnableLogitScaling(logit_scale_init=20.0, learnable=False),
-        )
-
-        modality_postprocessors[ModalityType.EEG] = nn.Sequential(
-            Normalize(dim=-1), LearnableLogitScaling(learnable=True)
-        )
-
-        modality_postprocessors[ModalityType.ECG] = nn.Sequential(
-            Normalize(dim=-1), LearnableLogitScaling(learnable=True)
         )
 
         return nn.ModuleDict(modality_postprocessors)
