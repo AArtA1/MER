@@ -50,7 +50,7 @@ SMG/
 ├── video_features/        # video
 
 
-└── skeleton_features/       # audio
+└── skeleton_features/       # pose
 
 
 ### 3. Training
@@ -96,7 +96,6 @@ Flag	Default	Description
 
 Run python train.py --help for the complete list.
 
-⸻
 
 ## 5. Requirements (concise)
 	•	Python ≥ 3.8 (tested on 3.10)
@@ -104,5 +103,4 @@ Run python train.py --help for the complete list.
 	•	tqdm, argparse, pickle
 	•	Everything listed in requirements.txt
 
-⸻
 
