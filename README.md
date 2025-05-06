@@ -18,12 +18,15 @@ conda activate emotionbind
 
 Pick the wheel matching your GPU / CUDA toolkit (examples below):
 
+```bash
 # CUDA 12.1
 pip install torch==2.4.0 torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 # CUDA 11.8
 # pip install torch==2.4.0 torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 # CPU-only
 # pip install torch==2.4.0 torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+```
+
 
 ### 1.3 Install project dependencies
 
@@ -69,11 +72,13 @@ Checkpoints and TensorBoard logs are saved to ./logs by default.
 
 ## 3.2 Monitoring with TensorBoard
 
+```bash
 # install if missing
 pip install tensorboard
 
 # launch the server (default port 6006)
 tensorboard --logdir logs
+```
 
 Open http://localhost:6006 in your browser to inspect losses, metrics and embeddings.
 
