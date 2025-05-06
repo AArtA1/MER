@@ -1,7 +1,11 @@
-if __name__ == "__main__":
-    import sys
-    sys.path.append("C:/Users/aslan/Documents/MER/emotionbind/")
+# if __name__ == "__main__":
+#     import sys
+#     #sys.path.append("C:/Users/aslan/Documents/MER/emotionbind/")
+#     sys.path.append("/home/aaaslanyan_2/MER/emotionbind")
 
+
+import pickle
+from typing import Any
 import torch
 from torch import nn
 from torchvision.models.video import mvit_v2_s, MViT_V2_S_Weights
@@ -23,10 +27,11 @@ from emotionbind.datasets.datasets import ExtendedDatasetHandler
 
 from emotionbind.models.emotionbind_model import AttentionPooling, ExactInvertibleVADProjection
 from emotionbind.utils.vad_utils import translate_VAD
+from emotionbind.config import DEVICE, ROOT_DIR
 
 
 class SMGDatasetHandler(ExtendedDatasetHandler, Dataset): 
-    def __init__(self, root_dir, video_dir, modalities=['video'], split='train'): 
+    def __init__(self, root_dir, video_dir, skeleton_dir, modalities=['video'], split='train', is_mapping = True): 
         """ 
         Initialize with the root folder of the dataset. 
  
@@ -41,9 +46,23 @@ class SMGDatasetHandler(ExtendedDatasetHandler, Dataset):
             "SMG_RGB_Phase2": os.path.join(root_dir, "SMG_RGB_Phase2"), 
         }
 
+        labeling_path = os.path.join(ROOT_DIR, 'emotionbind/labeling')
+
+        mapping = pd.read_csv(os.path.join(labeling_path, 'NRC-VAD-Lexicon.txt'), sep = '\t', header=None, names=["word", "x", "y", "z"])
+
+        mapping['word'] = mapping['word'].astype(str)
+
+        self.mapping = mapping.set_index('word')[['x', 'y', 'z']].apply(tuple, axis=1).to_dict()
+
+        self.is_mapping = is_mapping
+
+        with open(os.path.join(labeling_path, 'mappings/smg_mapping.pkl'), 'rb') as handle:
+            dataset_mapping = pickle.load(handle)
+        
+        self.dataset_mapping = list(dataset_mapping.items())
+
         self.modalities = modalities
 
-        self.vis_embeddings_path = os.path.join(self.root_dir, 'video_embeddings')
         self.set_split(self.split)
 
         self.video_pool = AttentionPooling(feature_dim=768, output_len=10)
@@ -65,16 +84,17 @@ class SMGDatasetHandler(ExtendedDatasetHandler, Dataset):
         Returns: 
         - tuple: A 3D vector (Valence, Arousal, Dominance). 
         """ 
+        if self.is_mapping:
+            if label == 17: # non-gesture label
+                emotion_vad = (0.5, 0.5, 0.5)
+            else:
+                emotion = self.dataset_mapping[label-1][-1]
+                emotion_vad = self.mapping[emotion]
 
-        return self.vad_embeddings(torch.tensor(label - 1))
+            return torch.tensor(emotion_vad)
 
-        # label_to_vad = { 
-        #     "happy": (1.0, 0.8, 0.6), 
-        #     "sad": (-0.8, -0.7, -0.5), 
-        #     "angry": (-0.6, 0.9, 0.8), 
-        #     "neutral": (0.0, 0.0, 0.0), 
-        # } 
-        # return torch.tensor(label_to_vad.get(label.lower(), (0.0, 0.0, 0.0))) 
+        else:
+            return self.vad_embeddings(torch.tensor(label - 1))
 
     def __getitem__(self, idx):
         """
@@ -85,22 +105,31 @@ class SMGDatasetHandler(ExtendedDatasetHandler, Dataset):
         """
         sample = self.data.iloc[idx]
 
+        # video
         video_path = os.path.join(self.vis_embeddings_path, self.split, f'sample_{idx}.pt')
-        try:
-            video_tensor = torch.load(video_path, weights_only=True)
-        except:
+
+        if not os.path.exists(video_path):
             self.extract_video_feature(idx)
+
+        video_tensor = torch.load(video_path, weights_only=True, map_location = 'cpu')
 
         if isinstance(video_tensor, np.ndarray):
             video_tensor = torch.tensor(video_tensor, dtype=torch.float32)
 
-        # if isinstance(audio_tensor, np.ndarray):
-        #     audio_tensor = torch.tensor(audio_tensor, dtype=torch.float32)
+        video_tensor = video_tensor.unsqueeze(0)
 
-        # TODO:
+        # skeleton
+        # skeleton_path = os.path.join(self.skeleton_embeddings_path, self.split, f'sample_{idx}.pt')
+        
+        # if not os.path.exists(skeleton_path):
+        #     self.extract_skeleton_feature(idx)
 
-        # video_tensor = self.video_pool(video_tensor.unsqueeze(0))
-        # audio_tensor = self.audio_pool(audio_tensor)
+        # skeleton_tensor = torch.load(skeleton_path, weights_only=True, map_location = 'cpu')
+
+        skeleton_tensor = None
+
+        if isinstance(skeleton_tensor, np.ndarray):
+            skeleton_tensor = torch.tensor(skeleton_tensor, dtype=torch.float32)
 
         vad_label = self.convert_labels_to_VAD_vector(sample["class"])
 
@@ -108,7 +137,8 @@ class SMGDatasetHandler(ExtendedDatasetHandler, Dataset):
             vad_label = self.vad_projector(vad_label)
 
         return {
-            "video": video_tensor.unsqueeze(0),
+            "video": video_tensor,
+            #"skeleton": skeleton_tensor,
             #"audio": audio_tensor,
             #"text": text_tensor,
             "label": vad_label,
@@ -126,13 +156,15 @@ class SMGDatasetHandler(ExtendedDatasetHandler, Dataset):
 
 
 
-
-
 if __name__ == "__main__":
 
-    smg = SMGDatasetHandler('C:/Users/aslan/Documents/MER/SMG', '', split = 'train')
+    smg = SMGDatasetHandler('/home/aaaslanyan_2/MER/SMG', '', split = 'train', is_mapping = True)
 
-    smg.extract_video_features(4)
+    # smg.extract_video_features(4)
+
+    print([smg[i] for i in range(5)])
+
+    # print(*[smg.convert_labels_to_VAD_vector(i) for i in range (1, 18)])
 
     #smg.extract_video_feature(2448)
 

@@ -9,47 +9,25 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 import sys
 
-sys.path.append("C:/Users/aslan/Documents/MER/emotionbind")
-
-# sys.path.append("C:/Users/aslan/Documents/MER/emotionbind/emotionbind")
-
+from emotionbind.train.evaluate import evaluate
 from emotionbind.datasets.dataset_iemocap import IEMOCAPDatasetHandler
-from emotionbind.datasets.dataset_amigos import AMIGOSDatasetHandler
-from emotionbind.datasets.dataset_mahnob_hci import MAHNOBHCIDatasetHandler
-#from emotionbind.datasets.dataset_kemocon import KEMOCONDatasetHandler
-# from emotionbind.datasets.dataset_imigue import IMIGUEDatasetHandler
 from emotionbind.datasets.dataset_smg import SMGDatasetHandler
+from emotionbind.datasets.dataset_imigue import iMiGUEDatasetHandler
 from emotionbind.models.emotionbind_model import EmotionBindModel
+from emotionbind.config import DEVICE, CHECKPOINT_DIR, ROOT_DIR
 from torch.utils.data import ConcatDataset
 
-
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-CHECKPOINT_DIR = "./checkpoints"
-
-
-writer = SummaryWriter(log_dir="/home/razzhivina/emotionbind/emotionbind/train/logs")
+writer = SummaryWriter(log_dir= os.path.join(ROOT_DIR,"emotionbind/train/logs"))
 
 DATASET_MODALITIES = {
     "iemocap": ["video", "audio", "text"],
-    "amigos": ["video", "faces", "eeg", "ecg"],
-    "kemocon": ["video", "audio", "text", "eeg", "ecg"],
-    "mahnob": ["video", "eeg"],
-    "smg" : ["video"]
+    "smg" : ["video", "skeleton"],
+    "imigue" : ["video", "skeleton"]
 }
 
-iemocap_root = "/space/emotion_data/IEMOCAP_full_release"
-feature_dirs_iemocap = {}
-feature_dirs_iemocap["video"] = "/space/emotion_data/IEMOCAP_full_release/mvit_v2_scene_features"
-feature_dirs_iemocap["audio"] = "args.audio_feature_dir"
-feature_dirs_iemocap["text"] = "/space/emotion_data/IEMOCAP/text_features"
-amigos_root = "/space/emotion_data/microgestures/AMIGOS"
-feature_dirs_amigos = {}
-feature_dirs_amigos["video"] = "/space/emotion_data/microgestures/AMIGOS/mvit2_features/rgb"
-feature_dirs_amigos["faces"] = "/space/emotion_data/microgestures/AMIGOS/mvit2_features/face"
-feature_dirs_amigos["eeg"] = "/space/emotion_data/microgestures/AMIGOS/unzipped/EEG/features"
-feature_dirs_amigos["ecg"] = "/space/emotion_data/microgestures/AMIGOS/unzipped/ECG/features"
+smg_root = "/home/aaaslanyan_2/MER/SMG"
+imigue_root = "/home/aaaslanyan_2/MER/iMiGUE"
 
-mahnob_root = "/space/emotion_data/microgestures/HCI_tagging"
 
 def info_nce_loss(embeddings, label, temperature=0.07):
     """
@@ -162,10 +140,8 @@ def log_weights(model):
 def get_dataset_handler(dataset_name, root_dir, feature_dirs, split):
     dataset_handlers = {
         "iemocap": IEMOCAPDatasetHandler,
-        "amigos": AMIGOSDatasetHandler,
-        "mahnob": MAHNOBHCIDatasetHandler,
-        #"kemocon": KEMOCONDatasetHandler,
-        "smg" : SMGDatasetHandler
+        "smg" : SMGDatasetHandler,
+        "imigue" : iMiGUEDatasetHandler
     }
     dataset_handler_cls = dataset_handlers.get(dataset_name.lower())
     if not dataset_handler_cls:
@@ -190,15 +166,18 @@ def train_process(process_id, dataset_name, dataset_root, feature_dirs, num_proc
     split = "train"
 
     if multi_mode:
-        dataset_iemocap = get_dataset_handler("iemocap", iemocap_root, feature_dirs_iemocap, split)
-        dataset_amigos = get_dataset_handler("amigos", amigos_root, feature_dirs_amigos, split)
-        dataset_mahnob = get_dataset_handler("mahnob", mahnob_root, feature_dirs, split)
-        dataset = ConcatDataset([dataset_iemocap, dataset_amigos, dataset_mahnob])
+        dataset_smg = get_dataset_handler("smg", smg_root, feature_dirs, split)
+        dataset_imigue = get_dataset_handler("imigue", imigue_root, feature_dirs, split)
+        dataset = ConcatDataset([dataset_smg, dataset_imigue])
+        test_dataset = get_dataset_handler("imigue", imigue_root, feature_dirs, 'test')
     else:
         dataset = get_dataset_handler(dataset_name, dataset_root, feature_dirs, split)
+        test_dataset = get_dataset_handler(dataset_name, dataset_root, feature_dirs, 'test')
 
     sampler = RandomSampler(dataset, num_samples=len(dataset) // num_processes, replacement=False)
     train_loader = DataLoader(dataset, batch_size=batch_size, sampler=sampler, num_workers=0)
+
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, sampler=sampler, num_workers=0)
 
     model = EmotionBindModel(dataset_name=dataset_name).to(DEVICE)
     optimizer = optim.AdamW(model.parameters(), lr=learning_rate)
@@ -223,26 +202,11 @@ def train_process(process_id, dataset_name, dataset_root, feature_dirs, num_proc
                 tqdm(train_loader, desc=f"Process {process_id} | Epoch {epoch + 1}/{epochs}")):
             optimizer.zero_grad()
             inputs = {}
-            if "video" in batch:
-                if dataset_name == "mahnob":
-                    inputs["vision"] = batch["video"].to(DEVICE)
-                    inputs["vision1"] = batch["vbw1"].to(DEVICE)
-                    inputs["vision2"] = batch["vbw2"].to(DEVICE)
-                    inputs["vision3"] = batch["vbw3"].to(DEVICE)
-                    inputs["vision4"] = batch["vbw4"].to(DEVICE)
-                    inputs["vision5"] = batch["vbw5"].to(DEVICE)
-                else:
-                    inputs["vision"] = batch["video"].to(DEVICE)
-            if "audio" in batch:
-                inputs["audio"] = batch["audio"].to(DEVICE)
-            if "text" in batch:
-                inputs["text"] = batch["text"].to(DEVICE)
-            if "faces" in batch:
-                inputs["faces"] = batch["faces"].to(DEVICE)
-            if "eeg" in batch:
-                inputs["eeg"] = batch["eeg"].to(DEVICE)
-            if "ecg" in batch:
-                inputs["ecg"] = batch["ecg"].to(DEVICE)
+            for key in ("video", "skeleton"):
+                if key in batch:
+                    tgt = "vision" if key == "video" else key
+                    tgt = "pose" if tgt == "skeleton" else tgt
+                    inputs[tgt] = batch[key].to(DEVICE)
             vad_labels = batch["label"].to(DEVICE)
 
             embeddings, _ = model(inputs)
@@ -255,7 +219,7 @@ def train_process(process_id, dataset_name, dataset_root, feature_dirs, num_proc
             print(f"Batch Loss: {loss.item():.6f}")
 
             step = epoch * len(train_loader) + batch_idx
-            writer.add_scalar("Loss/train", loss.item(), step)
+            writer.add_scalar("Loss/InfoNCE", loss.item(), step)
 
         avg_loss = total_loss / len(train_loader)
         print(f"Process {process_id} | Epoch {epoch + 1}/{epochs}, Loss: {avg_loss:.6f}")
@@ -266,24 +230,27 @@ def train_process(process_id, dataset_name, dataset_root, feature_dirs, num_proc
             torch.save({"epoch": epoch + 1, "model_state_dict": model.state_dict(), "loss": best_val_loss},
                        best_checkpoint_path)
             print(f"Process {process_id} | New best model saved with Validation Loss: {best_val_loss:.6f}")
+        
+        # Evaluation
+        #evaluate(model, test_loader, writer)
+    
     writer.close()
 
+    
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--root_dataset_dir", type=str, default="D:/IEMOCAP", help="Path to training dataset directory")
-    parser.add_argument("--text_feature_dir", type=str, default="D:/IEMOCAP/text_features",
+    parser.add_argument("--root_dataset_dir", type=str, default="D:/SMG", help="Path to training dataset directory")
+    parser.add_argument("--text_feature_dir", type=str, default="D:/SMG/text_features",
                         help="Path to text feature directory")
-    parser.add_argument("--video_feature_dir", type=str, default="D:/IEMOCAP/mvit_v2_scene_features",
+    parser.add_argument("--video_feature_dir", type=str, default="D:/SMG/mvit_v2_scene_features",
                         help="Path to video feature directory")
-    parser.add_argument("--audio_feature_dir", type=str, default="D:/IEMOCAP/wav2vec2_audio_features",
+    parser.add_argument("--audio_feature_dir", type=str, default="D:/SMG/wav2vec2_audio_features",
                         help="Path to audio feature directory")
-    parser.add_argument("--faces_feature_dir", type=str, default="D:/AMIGOS/face_features",
+    parser.add_argument("--faces_feature_dir", type=str, default="D:/SMG/face_features",
                         help="Path to faces video feature directory")
-    parser.add_argument("--eeg_feature_dir", type=str, default="D:/AMIGOS/eeg_features",
-                        help="Path to eeg video feature directory")
-    parser.add_argument("--ecg_feature_dir", type=str, default="D:/AMIGOS/ecg_features",
+    parser.add_argument("--skeleton_feature_dir", type=str, default="D:/SMG/skeleton_features",
                         help="Path to ecg video feature directory")
-    parser.add_argument("--dataset_name", type=str, default="iemocap", choices=['iemocap', 'amigos', 'kemocon', 'mahnob', 'smg', 'imigue'], help="Name of the dataset")
+    parser.add_argument("--dataset_name", type=str, choices=['smg', 'imigue', 'iemocap'], help="Name of the dataset")
     parser.add_argument("--num_processes", type=int, default=1, help="Number of parallel training processes")
     parser.add_argument("--batch_size", type=int, default=8, help="Batch size for training")
     parser.add_argument("--learning_rate", type=float, default=1e-4, help="Learning rate for optimizer")
@@ -300,11 +267,8 @@ def main():
         feature_dirs["text"] = args.text_feature_dir
     if args.faces_feature_dir:
         feature_dirs["faces"] = args.faces_feature_dir
-    if args.eeg_feature_dir:
-        feature_dirs["eeg"] = args.eeg_feature_dir
-    if args.ecg_feature_dir:
-        feature_dirs["ecg"] = args.ecg_feature_dir
-
+    if args.skeleton_feature_dir:
+        feature_dirs["skeleton"] = args.skeleton_feature_dir
 
 
     if not os.path.exists(args.root_dataset_dir):
@@ -330,6 +294,4 @@ def main():
 
 
 if __name__ == "__main__":
-    #print(os.getcwd())
     main()
-
