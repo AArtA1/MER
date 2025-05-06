@@ -12,8 +12,9 @@
 # create the environment
 conda create -y -n emotionbind python=3.10
 conda activate emotionbind
+```
 
-1.2 Install PyTorch 2.4 + CUDA
+### 1.2 Install PyTorch 2.4 + CUDA
 
 Pick the wheel matching your GPU / CUDA toolkit (examples below):
 
@@ -24,7 +25,7 @@ pip install torch==2.4.0 torchvision torchaudio --index-url https://download.pyt
 # CPU-only
 # pip install torch==2.4.0 torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 
-1.3 Install project dependencies
+### 1.3 Install project dependencies
 
 pip install -r requirements.txt
 
@@ -33,12 +34,12 @@ source bash.sh
 
 ⸻
 
-2. Datasets
+## 2. Datasets
 
 Supported datasets: SMG, IMIGUE
 Below is the SMG example; adjust paths for other datasets.
 
-2.1 Expected folder layout (SMG)
+### 2.1 Expected folder layout (SMG)
 
 SMG/
 ├── video_features/        # video
@@ -47,10 +48,11 @@ SMG/
 
 ⸻
 
-3. Training
+### 3. Training
 
-3.1 Basic command
+## 3.1 Basic command
 
+```bash
 python train.py \
   --dataset_name SMG \
   --root_dataset_dir /space/emotion_data/SMG/ \
@@ -61,10 +63,11 @@ python train.py \
   --batch_size 8 \
   --learning_rate 1e-4 \
   --epochs 10
+```
 
 Checkpoints and TensorBoard logs are saved to ./logs by default.
 
-3.2 Monitoring with TensorBoard
+## 3.2 Monitoring with TensorBoard
 
 # install if missing
 pip install tensorboard
