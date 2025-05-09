@@ -20,6 +20,7 @@ from abc import ABC, abstractmethod
 
 from emotionbind.utils.video_utils import get_frames, sample_frames_uniform
 from emotionbind.config import DEVICE
+from emotionbind.utils.skeleton_utils import extract_pose_from_tensor, extract_skeleton_embeddings
 
 
 class BaseDatasetHandler(Dataset):
@@ -132,13 +133,6 @@ class ExtendedDatasetHandler(ABC):
         self.vis_embeddings_path = os.path.join(self.root_dir, 'video_embeddings')
         self.skeleton_embeddings_path = os.path.join(self.root_dir, 'skeleton_embeddings')
 
-        # config = 'configs/skeleton/2s-agcn/2s-agcn_8xb16-bone-u100-80e_ntu60-xsub-keypoint-2d.py'
-        # config = Config.fromfile(config)
-        # # Setup a checkpoint file to load
-        # checkpoint = 'checkpoints/2s-agcn_8xb16-joint-u100-80e_ntu60-xsub-keypoint-2d_20221222-4c0ed77e.pth'
-        # # Initialize the recognizer
-        # model = init_recognizer(config, checkpoint, DEVICE='cpu')
-
     @abstractmethod
     def convert_labels_to_VAD_vector(self, label): 
         """ 
@@ -216,7 +210,7 @@ class ExtendedDatasetHandler(ABC):
         """
         data = self.data
 
-        dst_path = os.path.join(self.vis_embeddings_path, self.split)
+        dst_path = os.path.join(self.skeleton_embeddings_path, self.split)
 
         os.makedirs(dst_path, exist_ok=True)
 
@@ -227,25 +221,33 @@ class ExtendedDatasetHandler(ABC):
             full_path = os.path.join(self.root_dir, video_path)
             return get_frames(full_path, start_frame, end_frame)
 
-        encoder = mvit_v2_s(weights='DEFAULT')
+        config_path = 'configs/skeleton/2s-agcn/2s-agcn_8xb16-bone-u100-80e_ntu60-xsub-keypoint-2d.py'
+        config = Config.fromfile(config_path)
+        # Setup a checkpoint file to load
+        checkpoint = 'checkpoints/2s-agcn_8xb16-joint-u100-80e_ntu60-xsub-keypoint-2d_20221222-4c0ed77e.pth'
+        # Initialize the recognizer
+        model = init_recognizer(config, checkpoint, DEVICE='cpu')
 
-        encoder.head = nn.Identity()
+        model.cls_head.fc = nn.Identity()
 
-        encoder.to(DEVICE)
-
-        transformation = MViT_V2_S_Weights.KINETICS400_V1.transforms()
+        # Используем предобученную модель на COCO
+        inferencer = MMPoseInferencer(
+            pose2d='human',  # использует HRNet или другую модель по умолчанию
+        )
 
         batch = []
         with tqdm(total=len(data), desc="Processing", unit=" samples") as pbar:
             for index, row in data.iterrows():
-                input_tensor = get_tensors(row).permute(0, 3, 1, 2)
-                input_tensor = convert_image_dtype(input_tensor)
-                input_tensor = sample_frames_uniform(input_tensor, 16)
-                batch.append(transformation(input_tensor))
+                input_tensor = get_tensors(row)
+                
+                keypoints_seq, scores_seq = extract_pose_from_tensor(frames, inferencer)
+
+                embeddings = extract_skeleton_embeddings(model, keypoints_seq, scores_seq)
+
+                batch.append(embeddings)
 
                 if len(batch) == batch_size:
                     input_batch = torch.stack(batch, dim=0).to(DEVICE)
-                    # input_batch = transformation(input_batch)
                     encoded_batch = encoder(input_batch)
 
                     for i, tensor in enumerate(encoded_batch):

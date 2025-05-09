@@ -34,6 +34,7 @@ pip install torch==2.4.0 torchvision torchaudio --index-url https://download.pyt
 ```bash
 pip install -r requirements.txt
 
+# for skeletons extracting
 source bash.sh
 ```
 
@@ -52,12 +53,19 @@ SMG/
 
 └── skeleton_features/       # pose
 
+### 2.2 Sources
+
+All sources are available by the link below:
+
+[label]: 
 
 ### 3. Training
 
 ## 3.1 Basic command
 
 ```bash
+export PYTHONPATH=$(pwd)
+
 python train.py \
   --dataset_name SMG \
   --root_dataset_dir /space/emotion_data/SMG/ \

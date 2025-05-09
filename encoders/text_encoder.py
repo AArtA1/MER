@@ -1,124 +1,101 @@
-import re
-import os
+import os.path as osp
+from pathlib import Path
+from typing import List, Optional, Tuple, Union
+
+import mmengine
 import numpy as np
 import torch
-import pickle
-from transformers import RobertaTokenizer, RobertaModel
+import torch.nn as nn
+from mmengine.dataset import Compose, pseudo_collate
+from mmengine.registry import init_default_scope
+from mmengine.runner import load_checkpoint
+from mmengine.structures import InstanceData
+from mmengine.utils import track_iter_progress
 
-# Initialize the tokenizer and model
-tokenizer = RobertaTokenizer.from_pretrained('roberta-base')
-roberta_model = RobertaModel.from_pretrained('roberta-base')
+from mmaction.registry import MODELS
+from mmaction.structures import ActionDataSample
 
-def parse_transcription_file(file_path):
+
+def extract_pose_from_tensor(
+        frames_tensor: torch.Tensor,      # (T, H, W, 3)  либо (T, 3, H, W)
+        inferencer,
+        device: torch.device = torch.device("cpu"),
+        rgb_last: bool = True,            # True, если формат (H, W, 3). False → (3, H, W)
+        transform=None                    # опц. аугментации/препроцессинг, если нужны
+):
     """
-    Parse the transcription file and extract timestamps and speech segments.
-
-    Args:
-    - file_path (str): Path to the transcription text file.
-
-    Returns:
-    - List[dict]: List of dictionaries containing speaker, start_time, end_time, and text.
+    Возвращает:
+        keypoints_seq : np.ndarray  shape (T, 17, 2)
+        scores_seq    : np.ndarray  shape (T, 17)
     """
-    utterances = []
+    # приводим тип данных и устройство
+    frames_tensor = frames_tensor.to(device, non_blocking=True)
 
-    # Regular expression pattern to extract speaker, timestamps, and text
-    pattern = r'(\S+)\s+\[([\d.]+)-([\d.]+)\]:\s+(.*)'
+    keypoints_list, scores_list = [], []
 
-    with open(file_path, 'r', encoding='utf-8') as f:
-        for line in f:
-            match = re.match(pattern, line.strip())
-            if match:
-                speaker = match.group(1)
-                start_time = float(match.group(2))
-                end_time = float(match.group(3))
-                text = match.group(4).strip()
-                # Create a dictionary and add it to the list
-                utterances.append({
-                    'speaker': speaker,
-                    'start_time': start_time,
-                    'end_time': end_time,
-                    'text': text,
-                    'feature_vector': None  # Placeholder for feature vector
-                })
+    T = frames_tensor.shape[0]
+    for t in range(T):
+        frame_t = frames_tensor[t]
 
-    return utterances
+        # Приводим к формате (H, W, 3) uint8 numpy, т.к. большинство
+        # инференсеров ожидают именно его.
+        if not rgb_last:  # если (3, H, W) → (H, W, 3)
+            frame_t = frame_t.permute(1, 2, 0).contiguous()
 
-def extract_features(utterances, model, tokenizer):
-    """
-    Extract features for each utterance while keeping all metadata.
+        frame_np = frame_t.cpu().numpy()
 
-    Args:
-    - utterances (list of dict): List of dictionaries containing speaker, timestamps, and text.
-    - model (transformer model): The pre-trained model for feature extraction.
-    - tokenizer (transformer tokenizer): The tokenizer associated with the model.
+        if transform is not None:
+            frame_np = transform(frame_np)
 
-    Returns:
-    - List of dict: Original dictionaries enriched with feature_vector.
-    """
-    for utterance in utterances:
-        # Tokenize the text from the dictionary
-        encoded_input = tokenizer(
-            utterance['text'],
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-            max_length=512
-        )
+        result_gen = inferencer(frame_np)   # ← ваш треккинг-инференсер
+        result = next(result_gen)
 
-        # Extract features with no gradient computation
-        with torch.no_grad():
-            output = model(**encoded_input)
+        if result["predictions"]:
+            pred = result["predictions"][0][0]
+            # print(pred)
+            keypoints = np.array(pred["keypoints"]).astype(np.float32)       # (17, 2)
+            scores = np.array(pred["keypoint_scores"]).astype(np.float32)    # (17,)
+        else:
+            keypoints = np.zeros((17, 2), dtype=np.float32)
+            scores   = np.zeros((17,),    dtype=np.float32)
 
-        # Extract the [CLS] token feature
-        cls_embedding = output.last_hidden_state[:, 0, :].squeeze().cpu().numpy()
+        keypoints_list.append(keypoints)
+        scores_list.append(scores)
 
-        # Add the feature vector to the dictionary
-        utterance['feature_vector'] = cls_embedding.tolist()  # Convert numpy array to list
+    keypoints_seq = np.stack(keypoints_list)      # (T, 17, 2)
+    scores_seq   = np.stack(scores_list)          # (T, 17)
 
-    return utterances
+    return keypoints_seq, scores_seq
 
-def process_all_files(root_folder):
-    all_features = {}
 
-    # Loop through all session folders
-    for session_folder in os.listdir(root_folder):
-        session_folder_path = os.path.join(root_folder, session_folder)
+def extract_skeleton_embeddings(model: nn.Module,
+                                keypoints_seq: np.array,
+                                scores_seq: np.array,
+                               test_pipeline = None):
 
-        # Only process directories that are session folders
-        if os.path.isdir(session_folder_path) and session_folder.startswith('Session'):
-            all_features[session_folder] = {}  # Initialize dict for the session
-            transcriptions_folder = os.path.join(session_folder_path, 'dialog', 'transcriptions')
+    keypoints = np.stack(keypoints_seq, axis=0)  # (T, 17, 2)
+    scores = np.stack(scores_seq, axis=0)        # (T, 17)
+    total_frames = keypoints.shape[0]
 
-            if os.path.isdir(transcriptions_folder):
-                for txt_file in os.listdir(transcriptions_folder):
-                    # Exclude Mac system files (those starting with '._')
-                    if txt_file.endswith('.txt') and not txt_file.startswith('._'):
-                        file_path = os.path.join(transcriptions_folder, txt_file)
+    # === ВАЖНО: входной словарь для MMACTION ===
+    skeleton = {
+        'keypoint': keypoints[np.newaxis, ...].astype(np.float32),       # (1, T, 17, 2)
+        'keypoint_score': scores[np.newaxis, ...].astype(np.float32),    # (1, T, 17)
+        'total_frames': total_frames
+    }
 
-                        # Step 1: Parse the transcription file and extract speaker, timestamps & text
-                        utterances = parse_transcription_file(file_path)
+    
+    if test_pipeline is None:
+        cfg = model.cfg
+        init_default_scope(cfg.get('default_scope', 'mmaction'))
+        test_pipeline_cfg = cfg.test_pipeline
+        test_pipeline = Compose(test_pipeline_cfg)
 
-                        # Step 2: Extract features and save
-                        features = extract_features(utterances, roberta_model, tokenizer)
+    data = skeleton
 
-                        # Append results to the session > file dictionary
-                        all_features[session_folder][txt_file] = features
+    data = test_pipeline(data)
+    data = pseudo_collate([data])
 
-    return all_features
+    data = model.data_preprocessor(data, False)
 
-def save_features_to_pickle(hierarchical_features, output_file):
-    """
-    Save the hierarchical structure of features to a pickle file.
-
-    Args:
-    - hierarchical_features (dict): Nested dict with sessions, filenames, and utterances.
-    - output_file (str): Path to save the pickle file.
-    """
-    with open(output_file, 'wb') as f:
-        pickle.dump(hierarchical_features, f)
-    print(f"Features saved to {output_file}")
-
-# Example usage
-root_folder = r"D:\IEMOCAP"
-all_features_hierarchy = process_all_files(root_folder)
-save_features_to_pickle(all_features_hierarchy, 'iemocap_text_features_roberta.pkl')
+    return model.extract_feat(**data, stage = 'head')[0]
