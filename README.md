@@ -57,11 +57,11 @@ Dataset/
 
 All sources are available by the link below:
 
-[Datasets]: (https://disk.yandex.ru/d/khBrFTDT2FZO9Q) 
+[Datasets](https://disk.yandex.ru/d/khBrFTDT2FZO9Q) 
 
-### 3. Training
+## 3. Training
 
-## 3.1 Basic command
+### 3.1 Basic command
 
 ```bash
 export PYTHONPATH=$(pwd)
