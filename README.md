@@ -48,7 +48,7 @@ Below is the SMG example; adjust paths for other datasets.
 
 Dataset/
 
-├── video_features/        # video
+├── video_features/          # video
 
 
 └── skeleton_features/       # pose
@@ -57,7 +57,7 @@ Dataset/
 
 All sources are available by the link below:
 
-[Datasets]: https://disk.yandex.ru/d/khBrFTDT2FZO9Q 
+[Datasets]: (https://disk.yandex.ru/d/khBrFTDT2FZO9Q) 
 
 ### 3. Training
 
