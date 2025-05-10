@@ -44,9 +44,9 @@ source bash.sh
 Supported datasets: SMG, IMIGUE
 Below is the SMG example; adjust paths for other datasets.
 
-### 2.1 Expected folder layout (SMG)
+### 2.1 Expected folder layout 
 
-SMG/
+Dataset/
 
 ├── video_features/        # video
 
@@ -57,7 +57,7 @@ SMG/
 
 All sources are available by the link below:
 
-[label]: 
+[Datasets]: https://disk.yandex.ru/d/khBrFTDT2FZO9Q 
 
 ### 3. Training
 
