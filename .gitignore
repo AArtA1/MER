@@ -1,6 +1,5 @@
 *.csv
 *.mp4
-*.txt
 *.xlsx
 __pycache__/
 *.pdf
