@@ -9,7 +9,7 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score, f
 from emotionbind.datasets.dataset_iemocap import IEMOCAPDatasetHandler
 from emotionbind.models.emotionbind_model import EmotionBindModel
 from emotionbind.utils.vad_utils import find_closest_label, load_vad_dict
-from emotionbind.train.train import get_dataset_handler
+from emotionbind.train.train import get_dataset_handler, concordance_correlation_coefficient
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 CHECKPOINT_DIR = "./checkpoints"
@@ -32,59 +32,8 @@ def CCC(a: torch.tensor, b: torch.tensor):
     rho /= (a.var(dim=0, unbiased=False) + b.var(dim=0, unbiased=False) + torch.pow(a.mean(dim=0) - b.mean(dim=0), 2) + 1e-5)
     return rho
 
-
-def concordance_correlation_coefficient(y_true, y_pred):
-    mean_true = np.mean(y_true, axis=0)
-    mean_pred = np.mean(y_pred, axis=0)
-    var_true = np.var(y_true, axis=0)
-    var_pred = np.var(y_pred, axis=0)
-    covariance = np.cov(y_true.T, y_pred.T)[0:3, 3:6].diagonal()
-
-    ccc = (2 * covariance) / (var_true + var_pred + (mean_true - mean_pred) ** 2)
-    return ccc
-
 def pearson_correlation_coefficient(y_true, y_pred):
     return np.array([np.corrcoef(y_true[:, i], y_pred[:, i])[0, 1] for i in range(y_true.shape[1])])
-
-def evaluate(model, test_loader, writer):
-    model.eval()
-    ground_truth, predictions = [], []
-    categorical_ground_truth, categorical_predictions = [], []
-
-    vad_dict = load_vad_dict('../utils/sorted_vad_labels.pkl')
-
-    with torch.no_grad():
-        for batch in tqdm(test_loader, desc="Testing Model"):
-            modalities = DATASET_MODALITIES.get(args.dataset_name, [])
-            inputs = {}
-            for key in ("video", "skeleton"):
-                if key in batch:
-                    tgt = "vision" if key == "video" else key
-                    tgt = "pose" if tgt == "skeleton" else tgt
-                    inputs[tgt] = batch[key].to(DEVICE)
-
-            vad_labels = batch["label"].to(DEVICE)
-            categorical_labels = batch["categorical_label"]
-
-            _, vad_predictions = model(inputs)
-
-            predictions.append(vad_predictions.cpu())
-            ground_truth.append(vad_labels.cpu())
-    
-    ground_truth_tensor = torch.cat(ground_truth, dim=0).to(dtype=torch.float32, device=DEVICE)
-    predictions_tensor = torch.cat(predictions, dim=0).to(dtype=torch.float32, device=DEVICE)
-
-    mse = torch.nn.functional.mse_loss(predictions_tensor, ground_truth_tensor).item()
-    mae = torch.nn.functional.l1_loss(predictions_tensor, ground_truth_tensor).item()
-    ccc = concordance_correlation_coefficient(ground_truth_tensor, ground_truth_tensor)
-    ss_total = ((ground_truth_tensor - ground_truth_tensor.mean()) ** 2).sum()
-    ss_residual = ((ground_truth_tensor - predictions_tensor) ** 2).sum()
-    r2 = (1 - ss_residual / ss_total).item()    
-
-    writer.add_scalar("CCC", , epoch)
-    writer.add_scalar("MAE", mae, epoch)
-    writer.add_scalar("MSE", mse, epoch)
-
 
 def evaluate_model(test_loader, checkpoint_path, checkpoint_name):
     model = EmotionBindModel(dataset_name=args.dataset_name)
@@ -105,7 +54,7 @@ def evaluate_model(test_loader, checkpoint_path, checkpoint_name):
     ground_truth, predictions = [], []
     categorical_ground_truth, categorical_predictions = [], []
 
-    vad_dict = load_vad_dict('../utils/sorted_vad_labels.pkl')
+    # vad_dict = load_vad_dict('../utils/sorted_vad_labels.pkl')
 
     with torch.no_grad():
         for batch in tqdm(test_loader, desc="Testing Model"):

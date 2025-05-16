@@ -20,7 +20,7 @@ from abc import ABC, abstractmethod
 
 from emotionbind.utils.video_utils import get_frames, sample_frames_uniform
 from emotionbind.config import DEVICE
-from emotionbind.utils.skeleton_utils import extract_pose_from_tensor, extract_skeleton_embeddings
+# from emotionbind.utils.skeleton_utils import extract_pose_from_tensor, extract_skeleton_embeddings
 
 
 class BaseDatasetHandler(Dataset):
@@ -197,78 +197,78 @@ class ExtendedDatasetHandler(ABC):
 
         return metrics 
     
-    def extract_skeleton_features(self, batch_size=10):
-        """
-        Save tensors for the SMG dataset in batches.
+#     def extract_skeleton_features(self, batch_size=10):
+#         """
+#         Save tensors for the SMG dataset in batches.
 
-        This function reads the configuration, groups the data by the 'fpath' column,
-        sorts it by the 'start_frame' column, and then saves each video separately
-        as a CSV file in the specified destination path.
+#         This function reads the configuration, groups the data by the 'fpath' column,
+#         sorts it by the 'start_frame' column, and then saves each video separately
+#         as a CSV file in the specified destination path.
 
-        Args:
-        - batch_size (int, optional): Number of videos to process in each batch.
-        """
-        data = self.data
+#         Args:
+#         - batch_size (int, optional): Number of videos to process in each batch.
+#         """
+#         data = self.data
 
-        dst_path = os.path.join(self.skeleton_embeddings_path, self.split)
+#         dst_path = os.path.join(self.skeleton_embeddings_path, self.split)
 
-        os.makedirs(dst_path, exist_ok=True)
+#         os.makedirs(dst_path, exist_ok=True)
 
-        def get_tensors(row):
-            video_path = row["fpath"]
-            start_frame = row["start_frame"]
-            end_frame = row["end_frame"]
-            full_path = os.path.join(self.root_dir, video_path)
-            return get_frames(full_path, start_frame, end_frame)
+#         def get_tensors(row):
+#             video_path = row["fpath"]
+#             start_frame = row["start_frame"]
+#             end_frame = row["end_frame"]
+#             full_path = os.path.join(self.root_dir, video_path)
+#             return get_frames(full_path, start_frame, end_frame)
 
-        config_path = 'configs/skeleton/2s-agcn/2s-agcn_8xb16-bone-u100-80e_ntu60-xsub-keypoint-2d.py'
-        config = Config.fromfile(config_path)
-        # Setup a checkpoint file to load
-        checkpoint = 'checkpoints/2s-agcn_8xb16-joint-u100-80e_ntu60-xsub-keypoint-2d_20221222-4c0ed77e.pth'
-        # Initialize the recognizer
-        model = init_recognizer(config, checkpoint, DEVICE='cpu')
+#         config_path = 'configs/skeleton/2s-agcn/2s-agcn_8xb16-bone-u100-80e_ntu60-xsub-keypoint-2d.py'
+#         config = Config.fromfile(config_path)
+#         # Setup a checkpoint file to load
+#         checkpoint = 'checkpoints/2s-agcn_8xb16-joint-u100-80e_ntu60-xsub-keypoint-2d_20221222-4c0ed77e.pth'
+#         # Initialize the recognizer
+#         model = init_recognizer(config, checkpoint, DEVICE='cpu')
 
-        model.cls_head.fc = nn.Identity()
+#         model.cls_head.fc = nn.Identity()
 
-        # Используем предобученную модель на COCO
-        inferencer = MMPoseInferencer(
-            pose2d='human',  # использует HRNet или другую модель по умолчанию
-        )
+#         # Используем предобученную модель на COCO
+#         inferencer = MMPoseInferencer(
+#             pose2d='human',  # использует HRNet или другую модель по умолчанию
+#         )
 
-        batch = []
-        with tqdm(total=len(data), desc="Processing", unit=" samples") as pbar:
-            for index, row in data.iterrows():
-                input_tensor = get_tensors(row)
+#         batch = []
+#         with tqdm(total=len(data), desc="Processing", unit=" samples") as pbar:
+#             for index, row in data.iterrows():
+#                 input_tensor = get_tensors(row)
                 
-                keypoints_seq, scores_seq = extract_pose_from_tensor(frames, inferencer)
+#                 keypoints_seq, scores_seq = extract_pose_from_tensor(frames, inferencer)
 
-                embeddings = extract_skeleton_embeddings(model, keypoints_seq, scores_seq)
+#                 embeddings = extract_skeleton_embeddings(model, keypoints_seq, scores_seq)
 
-                batch.append(embeddings)
+#                 batch.append(embeddings)
 
-                if len(batch) == batch_size:
-                    input_batch = torch.stack(batch, dim=0).to(DEVICE)
-                    encoded_batch = encoder(input_batch)
+#                 if len(batch) == batch_size:
+#                     input_batch = torch.stack(batch, dim=0).to(DEVICE)
+#                     encoded_batch = encoder(input_batch)
 
-                    for i, tensor in enumerate(encoded_batch):
-                        sample_index = index - batch_size + i + 1
-                        sample_path = os.path.join(dst_path, f'sample_{sample_index}.pt')
-                        torch.save(tensor, sample_path)
+#                     for i, tensor in enumerate(encoded_batch):
+#                         sample_index = index - batch_size + i + 1
+#                         sample_path = os.path.join(dst_path, f'sample_{sample_index}.pt')
+#                         torch.save(tensor, sample_path)
 
-                    batch = []
+#                     batch = []
 
-                pbar.update(1)
-                pbar.update(1)
+#                 pbar.update(1)
+#                 pbar.update(1)
 
-        if batch:
-            tensors_batch = torch.stack(batch, dim = 0).to(DEVICE) 
-            # tensors_batch = transformation(tensors_batch)
-            encoded_batch = encoder(tensors_batch)
+#         if batch:
+#             tensors_batch = torch.stack(batch, dim = 0).to(DEVICE) 
+#             # tensors_batch = transformation(tensors_batch)
+#             encoded_batch = encoder(tensors_batch)
 
-            for i, tensor in enumerate(encoded_batch):
-                sample_index = len(data) - len(batch) + i + 1
-                sample_path = os.path.join(dst_path, f'sample_{sample_index}.pt')
-                torch.save(tensor, sample_path)
+#             for i, tensor in enumerate(encoded_batch):
+#                 sample_index = len(data) - len(batch) + i + 1
+#                 sample_path = os.path.join(dst_path, f'sample_{sample_index}.pt')
+#                 torch.save(tensor, sample_path)
 
     def extract_video_features(self, batch_size=10):
         """

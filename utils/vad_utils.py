@@ -1,6 +1,7 @@
 import numpy as np
 import pickle
 from scipy.spatial.distance import cdist
+import torch.nn as nn
 
 def translate_VAD(vad_values, direction="to_norm"):
     """
@@ -87,3 +88,21 @@ def get_label(vad_tuple, cat_label_dict):
     # If key is not found, find the closest one
     closest_key = find_closest_key(vad_tuple, list(cat_label_dict.keys()))
     return cat_label_dict[closest_key]
+
+class EmotionClassifier(nn.Module):
+    def __init__(self, input_dim=3, num_classes=6, hidden_dim=64, num_heads=3):
+        super(EmotionClassifier, self).__init__()
+        self.attn = nn.MultiheadAttention(embed_dim=input_dim, num_heads=num_heads, batch_first=True)
+        self.fc = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, num_classes)
+        )
+
+    def forward(self, x):
+        x = x.unsqueeze(1)  # Add sequence dimension for attention
+        x, _ = self.attn(x, x, x)
+        x = x.squeeze(1)  # Remove sequence dimension
+        return self.fc(x)

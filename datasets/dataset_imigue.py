@@ -149,13 +149,18 @@ class iMiGUEDatasetHandler(ExtendedDatasetHandler, Dataset):
 
 
 if __name__ == "__main__":
-    imigue_dataset = iMiGUEDatasetHandler('/home/aaaslanyan_2/MER/iMiGUE', 'train', is_mapping = True)
-
-    print(*[imigue_dataset.convert_labels_to_VAD_vector(i) for i in range (1, 32)])
+    imigue_dataset = iMiGUEDatasetHandler('/home/aaaslanyan_2/MER/iMiGUE', '', 'train', is_mapping = True)
+    
+    for split in ['test', 'valid', 'train']:
+        imigue_dataset.set_split(split)
+        imigue_dataset.extract_video_features(batch_size=4)
+    
+    
+#     print(*[imigue_dataset.convert_labels_to_VAD_vector(i) for i in range (1, 32)])
    
-    # for split in ['train', 'valid', 'test']:
-    #     imigue_dataset.set_split(split)
-    #     imigue_dataset.extract_video_features(batch_size=4)
+#     # for split in ['train', 'valid', 'test']:
+#     #     imigue_dataset.set_split(split)
+#     #     imigue_dataset.extract_video_features(batch_size=4)
 
 
 

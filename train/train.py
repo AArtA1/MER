@@ -1,6 +1,7 @@
 import os
 import argparse
 import torch
+import numpy as np
 import torch.optim as optim
 from torch.utils.data import DataLoader, RandomSampler
 import torch.multiprocessing as mp
@@ -9,7 +10,6 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 import sys
 
-from emotionbind.train.evaluate import evaluate
 from emotionbind.datasets.dataset_iemocap import IEMOCAPDatasetHandler
 from emotionbind.datasets.dataset_smg import SMGDatasetHandler
 from emotionbind.datasets.dataset_imigue import iMiGUEDatasetHandler
@@ -28,6 +28,58 @@ DATASET_MODALITIES = {
 smg_root = "/home/aaaslanyan_2/MER/SMG"
 imigue_root = "/home/aaaslanyan_2/MER/iMiGUE"
 
+def evaluate_epoch(model, test_loader, writer, epoch, dataset_name):
+    model.eval()
+    ground_truth, predictions = [], []
+    categorical_ground_truth, categorical_predictions = [], []
+
+    # vad_dict = load_vad_dict('../utils/sorted_vad_labels.pkl')
+
+    with torch.no_grad():
+        for batch in tqdm(test_loader, desc="Testing Model"):
+            modalities = DATASET_MODALITIES.get(dataset_name, [])
+            inputs = {}
+            for key in modalities:
+                if key in batch:
+                    tgt = "vision" if key == "video" else key
+                    tgt = "pose" if tgt == "skeleton" else tgt
+                    inputs[tgt] = batch[key].to(DEVICE)
+
+            vad_labels = batch["label"].to(DEVICE)
+            categorical_labels = batch["categorical_label"]
+
+            _, vad_predictions = model(inputs)
+
+            predictions.append(vad_predictions.cpu())
+            ground_truth.append(vad_labels.cpu())
+    
+    ground_truth_tensor = torch.cat(ground_truth, dim=0).to(dtype=torch.float32, device=DEVICE)
+    predictions_tensor = torch.cat(predictions, dim=0).to(dtype=torch.float32, device=DEVICE)
+
+    mse = torch.nn.functional.mse_loss(predictions_tensor, ground_truth_tensor).item()
+    mae = torch.nn.functional.l1_loss(predictions_tensor, ground_truth_tensor).item()
+    # print(ground_truth, predictions)
+    ccc = concordance_correlation_coefficient(np.array(ground_truth_tensor), np.array(predictions_tensor)).mean()
+    ss_total = ((ground_truth_tensor - ground_truth_tensor.mean()) ** 2).sum()
+    ss_residual = ((ground_truth_tensor - predictions_tensor) ** 2).sum()
+    r2 = (1 - ss_residual / ss_total).item()    
+
+    writer.add_scalar("CCC", ccc, epoch)
+    writer.add_scalar("MAE", mae, epoch)
+    writer.add_scalar("MSE", mse, epoch)
+    
+    print(f"MSE: {mse:.6f}, MAE: {mae:.6f}, R²: {r2:.6f}, CCC: {ccc}")
+
+
+def concordance_correlation_coefficient(y_true, y_pred):
+    mean_true = np.mean(y_true, axis=0)
+    mean_pred = np.mean(y_pred, axis=0)
+    var_true = np.var(y_true, axis=0)
+    var_pred = np.var(y_pred, axis=0)
+    covariance = np.cov(y_true.T, y_pred.T)[0:3, 3:6].diagonal()
+
+    ccc = (2 * covariance) / (var_true + var_pred + (mean_true - mean_pred) ** 2)
+    return ccc
 
 def info_nce_loss(embeddings, label, temperature=0.07):
     """
@@ -177,7 +229,7 @@ def train_process(process_id, dataset_name, dataset_root, feature_dirs, num_proc
     sampler = RandomSampler(dataset, num_samples=len(dataset) // num_processes, replacement=False)
     train_loader = DataLoader(dataset, batch_size=batch_size, sampler=sampler, num_workers=0)
 
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, sampler=sampler, num_workers=0)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, num_workers=0)
 
     model = EmotionBindModel(dataset_name=dataset_name).to(DEVICE)
     optimizer = optim.AdamW(model.parameters(), lr=learning_rate)
@@ -189,14 +241,14 @@ def train_process(process_id, dataset_name, dataset_root, feature_dirs, num_proc
     for epoch in range(epochs):
         model.train()
         total_loss = 0.0
-        try:
-            for batch_idx, batch in enumerate(
-                    tqdm(train_loader, desc=f"Process {process_id} | Epoch {epoch + 1}/{epochs}")):
-                pass
-        except Exception as e:
-            # print(f"Error occurred at batch index {batch_idx}")
-            print(f"Error: {e}")
-            print(f"Batch content: {batch}")
+        # try:
+        #     for batch_idx, batch in enumerate(
+        #             tqdm(train_loader, desc=f"Process {process_id} | Epoch {epoch + 1}/{epochs}")):
+        #         pass
+        # except Exception as e:
+        #     # print(f"Error occurred at batch index {batch_idx}")
+        #     print(f"Error: {e}")
+        #     print(f"Batch content: {batch}")
 
         for batch_idx, batch in enumerate(
                 tqdm(train_loader, desc=f"Process {process_id} | Epoch {epoch + 1}/{epochs}")):
@@ -232,7 +284,7 @@ def train_process(process_id, dataset_name, dataset_root, feature_dirs, num_proc
             print(f"Process {process_id} | New best model saved with Validation Loss: {best_val_loss:.6f}")
         
         # Evaluation
-        #evaluate(model, test_loader, writer)
+        evaluate_epoch(model, test_loader, writer, epoch, dataset_name)
     
     writer.close()
 

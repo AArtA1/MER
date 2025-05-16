@@ -10,6 +10,40 @@ from .datasets import BaseDatasetHandler
 from emotionbind.models.emotionbind_model import AttentionPooling, ExactInvertibleVADProjection
 from emotionbind.utils.vad_utils import translate_VAD
 
+IEMOCAP_EMOTIONS = {
+    "ang": 0,  # Anger
+    "sad": 1,  # Sadness
+    "hap": 2,  # Happiness
+    "dis": 3,  # Disgust
+    "fea": 4,  # Fear
+    "sur": 5,  # Surprise
+    "fru": 6,  # Frustration
+    "exc": 7,  # Excitement
+    "neu": 8,  # Neutral
+    "xxx": 9   # Unknown/Other
+}
+
+import numpy as np
+
+IEMOCAP_TO_VAD = {
+    "ang": np.array([1, 1, -1]),
+    "sad": np.array([-1, -1, -1]),
+    "hap": np.array([1, 1, 1]),
+    "dis": np.array([-1, 1, -1]),
+    "fea": np.array([-1, 1, 1]),
+    "sur": np.array([1, 1, 0]),
+    "fru": np.array([0, 1, -1]),
+    "exc": np.array([1, 0, 1]),
+    "neu": np.array([0, 0, 0]),
+}
+
+def closest_emotion(vector):
+    vector = np.array(vector)
+    closest = min(IEMOCAP_EMOTIONS.items(), key=lambda item: np.linalg.norm(vector - item[1]))
+    return closest[0]
+
+
+
 class IEMOCAPDatasetHandler(BaseDatasetHandler, Dataset):
     def __init__(self, root_dir, video_dir, audio_dir, text_dir,
                  modalities=['text', 'audio', 'video'], split='train'):

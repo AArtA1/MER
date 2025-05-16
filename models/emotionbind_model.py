@@ -21,6 +21,9 @@ from emotionbind.utils.vad_utils import find_closest_key, find_closest_label
 
 from emotionbind.imagebind.models.transformer import MultiheadAttention, SimpleTransformer
 
+from pathlib import Path
+
+
 ModalityType = SimpleNamespace(
     VISION="vision",
     TEXT="text",
@@ -376,7 +379,11 @@ class ExactInvertibleVADProjection(nn.Module):
     def __init__(self, input_dim=3, output_dim=768):
         super().__init__()
 
-        path = f"../datasets/labels/vad_projection_{input_dim}.pt"
+        #THIS_DIR = Path(__file__).resolve().parent  
+
+        #print(THIS_DIR)
+
+        path = f"emotionbind/datasets/labels/vad_projection_{input_dim}.pt"
 
         self.W = nn.Parameter(torch.load(path))
         self.W.requires_grad = False  # Ensure it's frozen
